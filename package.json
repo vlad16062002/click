@@ -1,0 +1,40 @@
+{
+  "name": "LionCoin",
+  "version": "2.0.0",
+  "description": "",
+  "main": "index.js",
+  "homepage": ".",
+  "scripts": {
+    "start": "cross-env HTTPS=true PORT=10888 react-scripts start",
+    "build": "react-scripts build",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "cross-env": "^5.2.0",
+    "react-hot-loader": "^4.13.0",
+    "react-scripts": "^2.1.5"
+  },
+  "dependencies": {
+    "@vkontakte/icons": "^1.89.0",
+    "@vkontakte/vk-bridge": "^2.4.1",
+    "@vkontakte/vkui": "^3.13.2",
+    "@vkontakte/vkui-connect": "^1.5.4",
+    "axios": "^0.18.0",
+    "babel-eslint": "^9.0.0",
+    "core-js": "^2.6.12",
+    "gh-pages": "^2.2.0",
+    "prop-types": "^15.7.2",
+    "react": "^16.14.0",
+    "react-dom": "^16.14.0"
+  },
+  "browserslist": [
+    ">0.2%",
+    "not dead",
+    "not ie <= 11",
+    "not op_mini all"
+  ]
+}

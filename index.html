@@ -1,0 +1,1006 @@
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<script type="text/javascript">
+window.onload = function() {
+(function namespace() {
+  
+  function Snake(div) {
+    if(!div) return false;
+    
+    // ------- Сетка
+    // Все числа должны быть четными
+    this.fieldX   = 40;   // Кол-во блоков по горизонтали = 40;
+    this.fieldY   = 32; // Кол-во строк = 32;
+
+    // ------ Змейка
+    this.defaultBlocks    = 3;        // Сколько блоков в змейке, в начале игры
+    this.gameSpeed      = 50;       // Скорость игры
+    this.snakeIntervalHandler;          // Ссылка на таймер, перемещения
+    this.positionX      = this.fieldX/2;  // Установка змейки. Позиция змейки по горизонтали
+    this.positionY      = this.fieldY/2;  // Установка змейки. Позиция змейки по вертикали
+    this.course       = 4;        // Направление змейки. 1-up, 2-down, 3-left, 4-right
+    this.locArr       = new Array;    // Траектория. Руками не трогать.
+    this.bonusArr     = new Array;    // Координаты бонусов
+    this.locker       = 0;        // Блокирует нажатие клавиш, пока не выполнятся предыдущие команды
+    this.result       = 0;        // Очки
+    this.snakeColorArr      = ["90cb40","6a962f"];
+    this.bonusColor     = "ffa500";
+
+    
+    // Пользовательский метод при столкновении
+    this.snakeCrash;
+    
+    // THIS
+    var that = this;
+    
+    
+    // Подвижный бонус
+    this.rndMoveBonusTimer;
+    this.bonusCourse = 1;
+    this.badResult = 0; // id = "badres"
+    this.runBonusTimerLink;
+    this.bonusSpeed = 100;
+    
+    // Форсаж
+    this.forsageLocker = 1; // Блокировщик от повторного использования
+    this.forsage = 0; // Счетчик форсажа
+    this.AddForsageCounter = 50; // для обратного отщета до 0. Когда 0, тогда зачисляется доп. форсаж
+    this.AddForsageCounter_2 = this.AddForsageCounter; // Дубль
+    this.forsageJump = 5; // Прыжок змейки при форсаже
+    
+    
+    //GameMod
+    this.gameMod = 1;
+    this.gameModSelected = 1; // Выбранный тип игры
+    
+    //--------------------------------------------------------------------- Функции
+    
+    // Добавляем новую позицию (горизонт/вертикаль)
+    this.addToLocArr = function(x,y) {
+      this.locArr[this.locArr.length] =  new Array(x,y);
+    }
+    
+    // Удаляем первый элемент
+    this.delFirstLocArr = function() {
+      for(var i=0;i<this.locArr.length;i++) {
+      
+        if(this.locArr[i] && this.locArr[i+1]) {
+          this.locArr[i][0] = this.locArr[i+1][0];
+          this.locArr[i][1] = this.locArr[i+1][1];
+        } else break;
+        
+      }
+      this.locArr.length = this.locArr.length-1;
+    }
+    
+    // Объект DOM
+    this.gebi = function(id) {
+      if(id) return document.getElementById(id);
+    }
+    
+    // Создание поля
+    this.createField = function() {
+
+      var tmpField = '';
+      
+      for(var i=0;i<this.fieldY;i++) {
+        tmpField += '<div class="tr" id="trid-'+i+'">';
+          for(var e=0;e<this.fieldX;e++) {
+            tmpField += '<div id="tdid-'+i+'-'+e+'"></div>';
+          }
+        tmpField += '</div>';
+      }
+      
+      this.gebi(div.divName).innerHTML = tmpField;
+    }
+    
+    // Создаем змейку
+    this.createSnake = function() {
+      for(var i=this.positionX; i<(this.positionX+this.defaultBlocks);i++) {
+        this.addToLocArr(i, this.positionY);
+        this.gebi("tdid-"+this.positionY+"-"+i).style.backgroundColor = this.snakeColorArr[0];
+      }
+      this.gebi("tdid-"+this.positionY+"-"+(i-1)).style.backgroundColor = this.snakeColorArr[1];
+      this.createBonus();
+    }
+    
+    // Остановка змейки
+    this.stop = function() {
+      clearInterval(this.snakeIntervalHandler);
+    }
+    
+    // Обработка нажатие клавиш и задание направления движения
+    this.control = function(e) {
+
+      if(this.locker == 1) return false;
+      
+      switch(e.keyCode) {
+      // влево
+        case 65:
+        case 37: 
+          if(this.course == 4) break;
+          this.course = 3;
+          this.locker = 1;
+        break;
+      // вправо
+        case 68:    
+        case 39:
+          if(this.course == 3) break;
+          this.course = 4;
+          this.locker = 1;
+        break;  
+      // вниз     
+        case 83: 
+        case 40:
+          if(this.course == 1) break;
+          this.course = 2;
+          this.locker = 1;
+        break;
+      // вверх      
+        case 87: 
+        case 38:
+          if(this.course == 2) break;
+          this.course = 1;
+          this.locker = 1;
+        break;
+      // Пробел
+        case 32:
+          this.forsageSnake();
+        break;
+      }
+    }
+
+    
+    // Движение
+    this.move = function() {  
+      var that = this;
+      this.snakeIntervalHandler = setInterval(function() {that.snakeMove();}, this.gameSpeed);
+    }
+    
+    // Двигает змейку на 1 клетку
+    this.snakeMove = function() {
+    
+      // Начисление форсажа
+      this.AddForsageCounter--;
+      if(this.AddForsageCounter == 0) {
+        this.forsage++;
+        this.AddForsageCounter = this.AddForsageCounter_2;
+        this.gebi("forsage").innerHTML = this.forsage;
+      }
+    
+      var tr=0,td=0;
+    
+      // Движение по направлению
+      switch(this.course) {
+      case 1: // вверх
+        td = this.locArr[this.locArr.length-1][0];
+        tr = this.locArr[this.locArr.length-1][1]-1;
+        if(tr < 0) tr = this.fieldY-1;
+      break;        
+      case 2: // вниз
+        td = this.locArr[this.locArr.length-1][0];
+        tr = this.locArr[this.locArr.length-1][1]+1;  
+        if(tr > this.fieldY-1) tr = 0;
+      break;      
+      case 3: // влево
+        td = this.locArr[this.locArr.length-1][0]-1;
+        tr = this.locArr[this.locArr.length-1][1];
+        if(td < 0) td = this.fieldX-1;
+      break;      
+      case 4: // вправо
+        td = this.locArr[this.locArr.length-1][0]+1;
+        tr = this.locArr[this.locArr.length-1][1];
+        if(td > this.fieldX-1) td = 0;
+      break;
+      }
+      
+      this.gebi("tdid-"+this.locArr[0][1]+"-"+this.locArr[0][0]).style.backgroundColor = "transparent";
+      this.delFirstLocArr();
+      this.addToLocArr(td, tr);
+      
+      
+      this.gebi("tdid-"+tr+"-"+td).style.backgroundColor = this.snakeColorArr[0];
+      if(this.locArr[this.locArr.length-1][1] == tr && this.locArr[this.locArr.length-1][0] == td) {
+        this.gebi("tdid-"+this.locArr[this.locArr.length-2][1]+"-"+this.locArr[this.locArr.length-2][0]).style.backgroundColor = this.snakeColorArr[0];
+        this.gebi("tdid-"+tr+"-"+td).style.backgroundColor = this.snakeColorArr[1];
+      } 
+        
+      
+      this.checkCrashesAndBonus();
+      this.locker = 0;
+    }
+    
+    // Проверка на столкновения змейки с хвостом
+    this.checkCrashesAndBonus = function() {
+    
+      var ln = this.locArr.length;
+      
+      // Столкновение
+      for(var i=0;i<ln-1;i++) {
+        if(this.locArr[i][0] == this.locArr[ln-1][0] && this.locArr[i][1] == this.locArr[ln-1][1]) {
+          this.stop();
+          this.snakeCrash();
+          break;
+          //alert('GAME OVER!\nU\'r result: '+this.result);
+        }
+      }
+      
+      // Найден ли бонус
+      this.bonusFound();
+    }
+    
+    // Проверка, найден ли бонус
+    this.bonusFound = function() {
+      var ln = this.locArr.length;
+      // Нашли бонус
+      if(this.locArr[ln-1][0] == this.bonusArr[0][0] && this.locArr[ln-1][1] == this.bonusArr[0][1]) {
+
+        // Добавляем новую клетку
+        var y = this.bonusArr[0][1], x = this.bonusArr[0][0];
+        
+        switch(this.course) {
+        case 1:
+          if(y <= 0) y = this.fieldY;
+          y--;
+        break;
+        case 2:
+          y++;
+          if(y >= (this.fieldY-1)) y = 0; 
+        break;
+        case 3:
+          if(x <= 0) x = this.fieldX;
+          x--;
+        break;
+        case 4:
+          x++;      
+          if(x >= (this.fieldX)) x = 0; 
+        break;
+        }
+        
+        this.addToLocArr(x, y);
+        this.gebi("tdid-"+y+"-"+x).style.backgroundColor = this.snakeColorArr[0];
+        
+        this.createBonus();
+        
+        if(this.gameSpeed == 60) this.result += 10000;
+        if(this.gameSpeed == 110) this.result += 10;
+        if(this.gameSpeed == 200) this.result += 5;
+        
+        
+        this.gebi("result").innerHTML = this.result;
+        //this.gebi("urnewscore").innerHTML = this.result;
+        
+      }
+      
+    }
+    
+    // Создание бонуса
+    this.createBonus = function() {
+
+      // ************************************************************
+      // Сохраняем в масив пустые клетки, не занятые змейкой, далее выбираем из пустых случайную клетку для бонуса.
+      
+      var freeArr  = new Array;
+      var f3 = true;
+      
+      for(var i=1;i<this.fieldY-1;i++) {
+        for(var e=1;e<this.fieldX-1;e++) {
+          f3 = true;
+          
+          for(var j=0, ln = this.locArr.length; j<ln; j++) {
+            if(this.locArr[j][0] == e && this.locArr[j][1] == i) {
+              f3 = false;
+              break;  
+            }
+          }
+          
+          if(f3) {
+            freeArr[freeArr.length] = new Array(e,i);
+          }
+        }
+        
+      }
+      
+      
+      // **************************************************************
+      
+      var rnd = this.random(1, freeArr.length-1);
+      
+      this.bonusArr[0] = new Array(freeArr[rnd][0],freeArr[rnd][1]);
+      this.gebi("tdid-"+freeArr[rnd][1]+"-"+freeArr[rnd][0]).style.backgroundColor = this.bonusColor;
+      this.gebi("tdid-"+this.locArr[this.locArr.length-2][1]+"-"+this.locArr[this.locArr.length-2][0]).style.backgroundColor = this.snakeColorArr[0];
+    
+      // Если уже пустых клеток не осталось для бонуса, то завершаем игру
+      if(freeArr.length <= 10) this.end();
+      
+    }
+    
+    // Конец игры
+    this.end = function() {
+      this.stop();
+      alert('You are winner!');
+    }
+    
+    // Возвращает случайное число между min и max
+    this.random = function(min, max) {
+       return Math.floor(Math.random() * (max - min + 1) + min);
+    }
+    
+    // Показывает и скрывает зеленый div с новым результатом
+    this.resultUPDinscore = function(arg) {
+      // рейтинг удален
+    }
+    
+    // двигает бонус
+    this.moveBonus = function() {
+        
+      var x = this.bonusArr[0][0];
+      var y = this.bonusArr[0][1];
+      
+      var old_x=x, old_y=y;
+      
+      var course = this.bonusCourse;
+      var that = this;
+
+      // один раз меням
+      switch(course) {
+        case 1:
+          old_x--;
+        break;      
+        case 2:
+          old_x++;
+        break;      
+        case 3:
+          old_y--;
+        break;      
+        case 4:
+          old_y++;
+        break;
+      }
+      
+      
+      switch(course) {
+        case 1:
+          x++;
+          old_x++;
+          if(x > (that.fieldX-1)) x = 0;
+          if(old_x > (that.fieldX-1)) old_x = 0;
+        break;      
+        case 2:
+          x--;
+          old_x--;
+          if(x < 0) x = that.fieldX-1;
+          if(old_x < 0) old_x = that.fieldX-1;
+        break;      
+        case 3:
+          y++;
+          old_y++;
+          if(y > (that.fieldY-1)) y = 0;
+          if(old_y > (that.fieldY-1)) old_y = 0;
+        break;      
+        case 4:
+          y--;
+          old_y--;
+          if(y < 0) y = that.fieldY-1;
+          if(old_y < 0) old_y = that.fieldY-1;
+        break;
+        }
+        
+        that.bonusArr[0] = new Array(x,y);
+        that.gebi("tdid-"+y+"-"+x).style.backgroundColor = that.bonusColor;
+        that.gebi("tdid-"+old_y+"-"+old_x).style.backgroundColor = "transparent";
+        that.crashTail();
+        
+        // Не найден ли бонус
+        that.bonusFound();
+    }
+    
+    
+    // проверка на столкновение бонуса с хвостом
+    this.crashTail = function() {
+      var x = this.bonusArr[0][0];
+      var y = this.bonusArr[0][1];
+      
+        var ln = this.locArr.length;
+        
+        for(var i=0;i<(ln-1);i++) {
+          if(this.locArr[i][0] == x && this.locArr[i][1] == y) {
+            this.gebi("tdid-"+y+"-"+x).style.backgroundColor = 'red';
+            this.badResult += 20;
+            this.gebi("badres").innerHTML = '-'+this.badResult;
+            
+            this.gebi("tdid-"+this.locArr[this.locArr.length-1][1]+"-"+this.locArr[this.locArr.length-1][0]).style.backgroundColor = "transparent";
+            this.locArr.length--;
+            
+            // конец игры, если змейка съедена
+            if(this.locArr.length <= 1) {
+              this.stop();
+              this.snakeCrash();
+            }
+            
+            break;
+          }
+
+        }
+    
+      }
+      
+    
+    // Через n-времени меняет направление бонуса
+    this.newBonusCourse = function() {
+      if(this.gameMod == 1) {
+        var that = this;
+        var chngt = 1000; // Время изменения курса
+        this.bonusCourse = this.random(1,4);
+        
+        switch(this.gameSpeed) {
+        case 200:
+          chngt = 4500;
+        break;
+        case 110:
+          chngt = 2000;
+        break;
+        case 60:
+          chngt = 900;
+        break;
+        default:
+          chngt = 1000;
+        break;
+        }
+
+        this.rndMoveBonusTimer = setTimeout(function() {that.newBonusCourse();}, chngt);
+      }
+    }
+    
+    // Останавливает смену направления бонуса
+    this.stopChangeBonusCourse = function() {
+      clearInterval(this.rndMoveBonusTimer);
+    }
+    
+    // Стирает предыдущий бонус
+    this.resetBonus = function() {
+      var x = this.bonusArr[0][0];
+      var y = this.bonusArr[0][1];
+      this.gebi("tdid-"+y+"-"+x).style.backgroundColor = 'transparent';
+      this.bonusArr = null;
+    }
+    
+    // Стирает отрицательное значение
+    this.resetBadRes = function() {
+      this.badResult = 0;
+      this.gebi("badres").innerHTML = "";
+    }
+    
+    // Реальный заработанный результат
+    this.realRes = function() {
+      // Вычитаем минус
+      if(this.badResult > this.result) {
+        //this.gebi("urnewscore").innerHTML = 0;
+        this.result = 0;
+      } else {
+        if(this.badResult > 0) {
+          this.result = this.result - this.badResult;
+          this.gebi("result").innerHTML = this.result;
+          //this.gebi("urnewscore").innerHTML = this.result;
+        }
+      }
+      this.resetBadRes();
+    }
+    
+    // Двигает бонус отдельным таймером
+    this.runBonus = function(speed) {
+      if(this.gameMod == 1) {
+        this.stopBonus(); // останавливаем на всякий случай
+        if(speed) this.bonusSpeed = speed;
+        var that = this;
+        
+        this.runBonusTimerLink = setInterval(function() {
+          that.moveBonus(); // бонус
+        }, this.bonusSpeed);
+      }
+    }
+    
+    // Остановка бонуса
+    this.stopBonus = function() {
+      clearInterval(this.runBonusTimerLink);
+    }
+    
+    // Ускорение змейки
+    this.forsageSnake = function() {
+      
+      if(this.forsageLocker == 0 && this.forsage > 0 && this.gameMod == 1) {
+        this.forsageLocker = 1;
+        this.forsage--;
+        this.gebi("forsage").innerHTML = this.forsage;
+        
+        var i = this.forsageJump;
+        var that = this;
+    
+        this.stop();
+        
+        var t = setInterval(function() {
+          i--;
+          if(i <= 0) {
+            clearInterval(t);
+            that.stop();
+            that.move();
+            that.forsageLocker = 0;
+          }
+          that.snakeMove();
+        }, 10);
+      }
+    }
+    
+    // Установка Выбранного, сохраненного, режима игры
+    this.selectButtonGameMod = function(arg) {
+      if(arg) this.gameModSelected = arg;
+      
+      switch(this.gameModSelected) {
+      case 1:
+        this.gebi("gmod_1").checked = "checked";
+      break;
+      case 2:
+        this.gebi("gmod_2").checked = "checked";
+      break;
+      }
+    }
+    
+    // run
+    document.onkeydown = function(event) {that.control(event);};
+    this.gebi("forsage").innerHTML = '0';
+    this.selectButtonGameMod();
+    this.newBonusCourse();
+  }
+
+  // END CLASS SNAKE 
+
+
+  // -----------------------------------------------------------------------------------
+
+
+    var snake;
+    var gameModSelected = 1;
+    loadSnake();
+    
+    // Создание нового объекта змейки
+    function loadSnake(snakedontcreat) {
+      snake = new Snake({divName: 'snake'});
+      snake.createField();
+      snake.createSnake();
+      
+      // Выбранный, сохраненный режим игры
+      switch(gameModSelected) {
+      case 1:
+        snake.selectButtonGameMod(1);
+        gameMod(1);
+      break;
+      case 2:
+        snake.selectButtonGameMod(2);
+        gameMod(2);
+      break;
+      }
+      
+      // Функция срабатывающая при столкновении
+      snake.snakeCrash = function() {
+        showPauseBtn(0);
+        
+        this.stopBonus();
+        this.realRes();
+        
+        // Пересоздаем поля, чтобы змейка не мешалась при просмотре рейтинга
+        setTimeout(function() {
+          snake.createField();
+        },1000);
+        
+        //Отправляем результат на сервер
+        //connect.sendResult(this.result);
+        this.resultUPDinscore(0);
+      }
+    }
+    
+    // Скрывает/показывает кнопку - пауза
+    function showPauseBtn(arg) {
+      if(arg == 1)  {
+        snake.gebi("control_btn_pause").style.visibility = "visible";
+      } else snake.gebi("control_btn_pause").style.visibility  = "hidden";
+    }
+    
+    
+    // --------- GameMod
+    snake.gebi("gmod_1").onclick = function() {gameMod(1);}
+    snake.gebi("gmod_2").onclick = function() {gameMod(2);}
+    
+    function gameMod(arg) {
+      if(!arg) return false;
+      switch(arg) {
+      case 1:
+        snake.gebi("frsg").style.visibility = "visible";
+        snake.gameMod = 1;
+        gameModSelected = 1;
+      break;
+      case 2:
+        snake.gebi("frsg").style.visibility  = "hidden";
+        snake.gameMod = 2;
+        gameModSelected = 2;
+      break;
+      }
+    }
+
+    
+    
+    // HTML buttons
+    
+    
+    // Кнопка - пауза
+    var pause = snake.gebi("control_btn_pause");
+    var pause_f = 1;
+    pause.onclick = function() {
+      if(pause_f == 1) {
+        pause.style.fontWeight = 'bold';
+        snake.stop();
+        pause_f = 0;
+        
+        snake.forsageLocker = 1;
+        snake.stopBonus();
+      } else {
+        pause.style.fontWeight = 'normal';
+        snake.move();
+        pause_f = 1;
+        
+        snake.forsageLocker = 0;
+        snake.runBonus();
+      }
+    }
+    
+    // Кнопка - новая игра
+    snake.gebi("control_btn_newgame").style.fontWeight = 'bold';
+    snake.gebi("control_btn_newgame").onclick = function() {
+    
+      snake.stopBonus();
+      snake.realRes();
+      
+      // Если юзер начал новую игру, набранные очки отправляем на сервер
+      if(snake.result > 0) {
+        //connect.sendResult(snake.result);
+      }
+      
+      snake.resultUPDinscore(1);
+      
+      showPauseBtn(0);
+      snake.stop();
+      
+      snake.gebi("control_btn_newgame").style.fontWeight = 'bold';
+      
+      // другие кнопки
+      pause.style.fontWeight = 'normal';
+      pause_f = 1;
+        
+      
+      // -----
+      snake.resetBonus();
+      
+      // *** Новый объект змейки
+      loadSnake();
+      snake.forsageLocker = 1;
+      snake.gebi("gamemenu").style.display = "block";
+      
+    }
+    
+
+    // Три кнопки скорости
+    snake.gebi("ctrl_speed_1").onclick = function() {
+      snake.gameSpeed = 200;
+      snake.gebi("gamemenu").style.display = "none";
+      snake.move();
+      showPauseBtn(1);
+      snake.gebi("control_btn_newgame").style.fontWeight = 'normal';
+      
+      snake.runBonus(180);
+      snake.forsageLocker = 0;
+      
+      snake.AddForsageCounter = 30;
+      snake.AddForsageCounter_2 = 30;
+      snake.forsageJump = 5;
+    }
+    
+    snake.gebi("ctrl_speed_2").onclick = function() {
+      snake.gameSpeed = 110;
+      snake.gebi("gamemenu").style.display = "none";
+      snake.move();
+      showPauseBtn(1);
+      snake.gebi("control_btn_newgame").style.fontWeight = 'normal';
+      
+      snake.runBonus(90);
+      snake.forsageLocker = 0;
+      
+      snake.AddForsageCounter = 60;
+      snake.AddForsageCounter_2 = 60;
+      snake.forsageJump = 7;
+    }
+    
+    snake.gebi("ctrl_speed_3").onclick = function() {
+      snake.gameSpeed = 60;
+      snake.gebi("gamemenu").style.display = "none";
+      snake.move();
+      showPauseBtn(1);
+      snake.gebi("control_btn_newgame").style.fontWeight = 'normal';
+      
+      snake.runBonus(50);
+      snake.forsageLocker = 0;
+      
+      snake.AddForsageCounter = 80;
+      snake.AddForsageCounter_2 = 80;
+      snake.forsageJump = 8;
+    }
+    
+})();
+
+}
+</script>
+<style type="text/css">
+body {
+  margin: 0px;
+  padding: 0px;
+  overflow: hidden;
+  background-color: white;
+}
+.snakebox {
+  margin: 10px 0 0 10px;
+  -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  font-family: "PT sans", Tahoma, sans-serif, serif;
+}
+#snake {
+  min-width: 720px;
+  border-radius: 4px;
+  display: inline-block;
+  background-color: white;
+}
+#snake .tr div {
+  width: 15px;
+  height: 15px;
+  display: inline-block;
+  margin: 0 0 1px 1px;
+  border-radius: 4px;
+  border: 1px solid #f5f5f5;
+}
+.ctrl {float: right; margin-right:10px;}
+.ctrl .btn {
+  cursor: pointer;
+  margin-left: 5px;
+  background-color: #06b0ff;
+  color: white;
+  padding: 0px 8px;
+  border-radius: 4px;
+}
+.btn:hover {
+  background-color: #02d2ff;
+}
+.controls {
+  width: 720px;
+  margin-bottom: 5px;
+  font-size: 0.8em;
+  color: #555555;
+}
+#gamemenu {
+  margin: 80px 0 0 160px;
+  width: 410px;
+  position: absolute;
+}
+#gamemenu .blackbox {
+  background-color: black;
+  opacity: 0.1;
+  width: 400px;
+  height: 155px;
+  position: absolute;
+  border-radius: 4px;
+  z-index: 50;
+}
+.bb_btnb {
+  background-color: #06b0ff;
+  color: white;
+  font-size: 0.9em;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 1px 1px 0px #333333;
+  margin-left: 12px;
+}
+.bb_btnb:hover {
+  background-color: #02d2ff;
+}
+.bb_btnb:first-child {
+  margin-left: 50px;
+}
+.gmbtnbox {
+  margin: 105px 0 0 40px;
+  position: absolute;
+  z-index: 100;
+}
+.gm_h {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 1.4em;
+}
+.gm_h2 {
+  font-size: 0.9em;
+}
+.bb_btnb_h {
+  position: absolute;
+  color: #7b7b7b;
+  font-size: 0.8em;
+  margin: -25px 0 0 10px;
+}
+.helpbox {
+  margin: 200px 0 0 0;
+}
+.keysbox {
+  position: absolute;
+  z-index: 100;
+  margin: 30px 0 0 60px;
+}
+.keysbox2 {
+  position: absolute;
+  z-index: 100;
+  margin: 30px 0 0 240px;
+}
+.keysbox div, .keysbox2 div {
+  position: absolute;
+}
+.kw {
+  margin: 0 0 0 35px;
+  width: 30px;
+  height: 30px;
+  background-color: #787878;  
+}
+.ka {
+  margin: 35px 0 0 0;
+  width: 30px;
+  height: 30px;
+  background-color: #787878;
+}
+.kd {
+  margin: 35px 0 0 70px;
+  width: 30px;
+  height: 30px;
+  background-color: #787878;
+}
+.ks {
+  margin: 35px 0 0 35px;
+  width: 30px;
+  height: 30px;
+  background-color: #787878;
+}
+.ktxt, .ktxt2 {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 1em;
+  color: white;
+  margin: 5px 0 0 8px;
+}
+.ktxt2 {
+  margin-left: 10px;
+}
+.copyright {
+  font-size: 0.7em;
+  margin-top: 155px;
+  color: #7b7b7b;
+}
+.copyright a {
+  color: #7b7b7b;
+  text-decoration: none;
+}
+.copyright a:hover {
+  text-decoration: underline;
+}
+#result, #forsage {
+  background-color: #90cb40;
+  color: white;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: 5px;
+}
+.resbox {
+  padding: 2px 8px;
+  border-radius: 4px 4px 0 0;
+  margin-left: 10px;
+}
+.clear_l {clear: left;}
+.clear_b {clear: both;}
+.clear_r {clear: right;}
+.frsg {
+  padding-left: 15px;
+}
+.gamemod {
+  width: 200px;
+  position: absolute;
+  margin: 45px 0 0 40px;
+  z-index: 2000;
+}
+.gamemod div span {
+  color: #222222;
+  padding-left: 10px;
+  margin-left: 0px;
+}
+.gamemod div span label {
+  cursor: pointer;
+  font-size: 1em;
+}
+.spacebtn {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 1em;
+  color: white;
+  margin: 110px 0 0 60px;
+  width: 280px;
+  height: 22px;
+  text-align: center;
+  background-color: #787878;
+  position: absolute;
+  z-index: 2000;
+}
+</style>
+<head>
+<body>
+
+<div class="snakebox" id="snakebox">
+
+
+  <div class="controls">
+    <span class="ctrl">
+      <span class="btn" id="control_btn_pause" style="visibility:hidden;">Пауза</span>
+      <span class="btn" id="control_btn_newgame">Новая игра</span>
+    </span>
+    <span class="resbox">Набрано очков: <span id="result">0</span><span id="badres"></span>
+    <span id="frsg"><span class="frsg">Форсаж: </span><span id="forsage">0</span></span>
+    <!--<span id="errormsgbox"></span>-->
+    </span>
+  </div><!--/controls-->
+
+  
+
+  <div id="gamemenu">
+    <div class="speedbox">
+      <div class="gm_h">Начало новой игры</div>
+      <div class="gmbtnbox">
+        <span class="bb_btnb_h">Выберите скорость змейки</span>
+        <span class="bb_btnb" id="ctrl_speed_1">медленная</span>
+        <span class="bb_btnb" id="ctrl_speed_2">нормальная</span>
+        <span class="bb_btnb" id="ctrl_speed_3">быстрая</span>
+      </div>
+      
+      <div class="gamemod">
+        <span class="bb_btnb_h">Выберите игровой режим</span>
+        <div>
+          <span><label><input id="gmod_1" type="radio" name="mode" />Погоня</label></span>
+          <span><label><input id="gmod_2" type="radio" name="mode" />Классика</label></span>
+        </div>
+      </div>
+      
+      <div class="blackbox"></div>
+    </div>
+
+    <div class="helpbox">
+      <div class="gm_h2">Кнопки управления змейкой: W,A,S,D(или стрелочки) и Пробел</div>
+      <div class="gmbtnbox2">
+      <div class="spacebtn">Пробел</div>
+        <div class="keysbox">
+          <div class="kw"><div class="ktxt">W</div></div><div class="ka"><div class="ktxt">A</div></div><div class="kd"><div class="ktxt">D</div></div><div class="ks"><div class="ktxt">S</div></div>
+        </div>
+        <div class="keysbox2">
+          <div class="kw"><div class="ktxt2">&#8593;</div></div><div class="ka"><div class="ktxt2">&#8592;</div></div><div class="kd"><div class="ktxt2">&#8594;</div></div><div class="ks"><div class="ktxt2">&#8595;</div></div>
+        </div>
+      </div>
+      <div class="blackbox"></div>
+    </div>
+    
+  <div class="copyright">Классическая змейка v1.0</div>
+  </div><!--/gamemenu-->
+  
+
+  
+<div id="snake"></div>
+</div><!--/snakebox-->
+
+</body>
